@@ -19,10 +19,6 @@ func NewDefaultServer(manager oauth2.Manager) *Server {
 
 // NewServer create authorization server
 func NewServer(cfg *Config, manager oauth2.Manager) *Server {
-	if err := manager.CheckInterface(); err != nil {
-		panic(err)
-	}
-
 	srv := &Server{
 		Config:  cfg,
 		Manager: manager,
@@ -149,15 +145,10 @@ func (s *Server) CheckResponseType(rt oauth2.ResponseType) bool {
 
 // ValidationAuthorizeRequest the authorization request validation
 func (s *Server) ValidationAuthorizeRequest(r *http.Request) (req *AuthorizeRequest, err error) {
-	redirectURI, err := url.QueryUnescape(r.FormValue("redirect_uri"))
-	if err != nil {
-		return
-	}
-
+	redirectURI := r.FormValue("redirect_uri")
 	clientID := r.FormValue("client_id")
-	if r.Method != "GET" ||
-		clientID == "" ||
-		redirectURI == "" {
+	if !(r.Method == "GET" || r.Method == "POST") ||
+		clientID == "" {
 		err = errors.ErrInvalidRequest
 		return
 	}
@@ -178,6 +169,7 @@ func (s *Server) ValidationAuthorizeRequest(r *http.Request) (req *AuthorizeRequ
 		ClientID:     clientID,
 		State:        r.FormValue("state"),
 		Scope:        r.FormValue("scope"),
+		Request:      r,
 	}
 	return
 }
@@ -221,6 +213,7 @@ func (s *Server) GetAuthorizeToken(req *AuthorizeRequest) (ti oauth2.TokenInfo, 
 		RedirectURI:    req.RedirectURI,
 		Scope:          req.Scope,
 		AccessTokenExp: req.AccessTokenExp,
+		Request:        req.Request,
 	}
 
 	ti, err = s.Manager.GenerateAuthToken(req.ResponseType, tgr)
@@ -288,6 +281,16 @@ func (s *Server) HandleAuthorizeRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// If the redirect URI is empty, the default domain provided by the client is used.
+	if req.RedirectURI == "" {
+		client, verr := s.Manager.GetClient(req.ClientID)
+		if verr != nil {
+			err = verr
+			return
+		}
+		req.RedirectURI = client.GetDomain()
+	}
+
 	err = s.redirect(w, req, s.GetAuthorizeData(req.ResponseType, ti))
 	return
 }
@@ -315,6 +318,7 @@ func (s *Server) ValidationTokenRequest(r *http.Request) (gt oauth2.GrantType, t
 	tgr = &oauth2.TokenGenerateRequest{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
+		Request:      r,
 	}
 
 	switch gt {

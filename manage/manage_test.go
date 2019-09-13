@@ -18,7 +18,7 @@ func TestManager(t *testing.T) {
 		manager.MustTokenStorage(store.NewMemoryTokenStore())
 
 		clientStore := store.NewClientStore()
-		clientStore.Set("1", &models.Client{
+		_ = clientStore.Set("1", &models.Client{
 			ID:     "1",
 			Secret: "11",
 			Domain: "http://localhost",
@@ -31,11 +31,6 @@ func TestManager(t *testing.T) {
 			RedirectURI: "http://localhost/oauth2",
 			Scope:       "all",
 		}
-
-		Convey("CheckInterface test", func() {
-			err := manager.CheckInterface()
-			So(err, ShouldBeNil)
-		})
 
 		Convey("GetClient test", func() {
 			cli, err := manager.GetClient("1")

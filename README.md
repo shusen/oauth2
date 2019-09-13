@@ -1,8 +1,8 @@
-# Golang OAuth 2.0
+# Golang OAuth 2.0 Server
 
 > An open protocol to allow secure authorization in a simple and standard method from web, mobile and desktop applications.
 
-[![License][License-Image]][License-Url] [![ReportCard][ReportCard-Image]][ReportCard-Url] [![Build][Build-Status-Image]][Build-Status-Url] [![Coverage][Coverage-Image]][Coverage-Url] [![GoDoc][GoDoc-Image]][GoDoc-Url]
+[![Build][Build-Status-Image]][Build-Status-Url] [![Codecov][codecov-image]][codecov-url] [![ReportCard][reportcard-image]][reportcard-url] [![GoDoc][godoc-image]][godoc-url] [![License][license-image]][license-url]
 
 ## Protocol Flow
 
@@ -116,12 +116,13 @@ go build server.go
 
 ## Features
 
-* easy to use
-* based on the [RFC 6749](https://tools.ietf.org/html/rfc6749) implementation
-* token storage support TTL
-* support custom expiration time of the access token
-* support custom extension field
-* support custom scope
+* Easy to use
+* Based on the [RFC 6749](https://tools.ietf.org/html/rfc6749) implementation
+* Token storage support TTL
+* Support custom expiration time of the access token
+* Support custom extension field
+* Support custom scope
+* Support jwt to generate access tokens
 
 ## Example
 
@@ -129,23 +130,58 @@ go build server.go
 
 Simulation examples of authorization code model, please check [example](/example)
 
-## Storage Implements
+### Use jwt to generate access tokens
 
-* [BuntDB](https://github.com/tidwall/buntdb)(The default storage)
+```go
+
+import (
+	"gopkg.in/oauth2.v3/generates"
+	"github.com/dgrijalva/jwt-go"
+)
+
+// ...
+manager.MapAccessGenerate(generates.NewJWTAccessGenerate([]byte("00000000"), jwt.SigningMethodHS512))
+
+// Parse and verify jwt access token
+token, err := jwt.ParseWithClaims(access, &generates.JWTAccessClaims{}, func(t *jwt.Token) (interface{}, error) {
+	if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+		return nil, fmt.Errorf("parse error")
+	}
+	return []byte("00000000"), nil
+})
+if err != nil {
+	// panic(err)
+}
+
+claims, ok := token.Claims.(*generates.JWTAccessClaims)
+if !ok || !token.Valid {
+	// panic("invalid token")
+}
+```
+
+## Store Implements
+
+* [BuntDB](https://github.com/tidwall/buntdb)(default store)
 * [Redis](https://github.com/go-oauth2/redis)
 * [MongoDB](https://github.com/go-oauth2/mongo)
+* [MySQL](https://github.com/go-oauth2/mysql)
+* [MySQL (Provides both client and token store)](https://github.com/imrenagi/go-oauth2-mysql) 
+* [PostgreSQL](https://github.com/vgarvardt/go-oauth2-pg)
+* [DynamoDB](https://github.com/contamobi/go-oauth2-dynamodb)
+* [XORM](https://github.com/techknowlogick/go-oauth2-xorm)
+* [GORM](https://github.com/techknowlogick/go-oauth2-gorm)
 
 ## MIT License
 
   Copyright (c) 2016 Lyric
 
-[License-Url]: http://opensource.org/licenses/MIT
-[License-Image]: https://img.shields.io/npm/l/express.svg
 [Build-Status-Url]: https://travis-ci.org/go-oauth2/oauth2
 [Build-Status-Image]: https://travis-ci.org/go-oauth2/oauth2.svg?branch=master
-[ReportCard-Url]: https://goreportcard.com/report/gopkg.in/oauth2.v3
-[ReportCard-Image]: https://goreportcard.com/badge/gopkg.in/oauth2.v3
-[GoDoc-Url]: https://godoc.org/gopkg.in/oauth2.v3
-[GoDoc-Image]: https://godoc.org/gopkg.in/oauth2.v3?status.svg
-[Coverage-Url]: https://coveralls.io/github/go-oauth2/oauth2?branch=master
-[Coverage-Image]: https://coveralls.io/repos/github/go-oauth2/oauth2/badge.svg?branch=master
+[codecov-url]: https://codecov.io/gh/go-oauth2/oauth2
+[codecov-image]: https://codecov.io/gh/go-oauth2/oauth2/branch/master/graph/badge.svg
+[reportcard-url]: https://goreportcard.com/report/gopkg.in/oauth2.v3
+[reportcard-image]: https://goreportcard.com/badge/gopkg.in/oauth2.v3
+[godoc-url]: https://godoc.org/gopkg.in/oauth2.v3
+[godoc-image]: https://godoc.org/gopkg.in/oauth2.v3?status.svg
+[license-url]: http://opensource.org/licenses/MIT
+[license-image]: https://img.shields.io/npm/l/express.svg
