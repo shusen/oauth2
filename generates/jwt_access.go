@@ -1,16 +1,15 @@
 package generates
 
 import (
+	"context"
 	"encoding/base64"
 	"strings"
 	"time"
 
-	errs "errors"
-
-	"github.com/dgrijalva/jwt-go"
-	"gopkg.in/oauth2.v3"
-	"gopkg.in/oauth2.v3/errors"
-	"gopkg.in/oauth2.v3/utils/uuid"
+	"github.com/go-oauth2/oauth2/v4"
+	"github.com/go-oauth2/oauth2/v4/errors"
+	"github.com/golang-jwt/jwt"
+	"github.com/google/uuid"
 )
 
 // JWTAccessClaims jwt claims
@@ -27,8 +26,9 @@ func (a *JWTAccessClaims) Valid() error {
 }
 
 // NewJWTAccessGenerate create to generate the jwt access token instance
-func NewJWTAccessGenerate(key []byte, method jwt.SigningMethod) *JWTAccessGenerate {
+func NewJWTAccessGenerate(kid string, key []byte, method jwt.SigningMethod) *JWTAccessGenerate {
 	return &JWTAccessGenerate{
+		SignedKeyID:  kid,
 		SignedKey:    key,
 		SignedMethod: method,
 	}
@@ -36,12 +36,13 @@ func NewJWTAccessGenerate(key []byte, method jwt.SigningMethod) *JWTAccessGenera
 
 // JWTAccessGenerate generate the jwt access token
 type JWTAccessGenerate struct {
+	SignedKeyID  string
 	SignedKey    []byte
 	SignedMethod jwt.SigningMethod
 }
 
 // Token based on the UUID generated token
-func (a *JWTAccessGenerate) Token(data *oauth2.GenerateBasic, isGenRefresh bool) (access, refresh string, err error) {
+func (a *JWTAccessGenerate) Token(ctx context.Context, data *oauth2.GenerateBasic, isGenRefresh bool) (string, string, error) {
 	claims := &JWTAccessClaims{
 		StandardClaims: jwt.StandardClaims{
 			Audience:  data.Client.GetID(),
@@ -51,33 +52,41 @@ func (a *JWTAccessGenerate) Token(data *oauth2.GenerateBasic, isGenRefresh bool)
 	}
 
 	token := jwt.NewWithClaims(a.SignedMethod, claims)
+	if a.SignedKeyID != "" {
+		token.Header["kid"] = a.SignedKeyID
+	}
 	var key interface{}
 	if a.isEs() {
-		key, err = jwt.ParseECPrivateKeyFromPEM(a.SignedKey)
+		v, err := jwt.ParseECPrivateKeyFromPEM(a.SignedKey)
 		if err != nil {
 			return "", "", err
 		}
+		key = v
 	} else if a.isRsOrPS() {
-		key, err = jwt.ParseRSAPrivateKeyFromPEM(a.SignedKey)
+		v, err := jwt.ParseRSAPrivateKeyFromPEM(a.SignedKey)
 		if err != nil {
 			return "", "", err
 		}
+		key = v
 	} else if a.isHs() {
 		key = a.SignedKey
 	} else {
-		return "", "", errs.New("unsupported sign method")
-	}
-	access, err = token.SignedString(key)
-	if err != nil {
-		return
+		return "", "", errors.New("unsupported sign method")
 	}
 
+	access, err := token.SignedString(key)
+	if err != nil {
+		return "", "", err
+	}
+	refresh := ""
+
 	if isGenRefresh {
-		refresh = base64.URLEncoding.EncodeToString(uuid.NewSHA1(uuid.Must(uuid.NewRandom()), []byte(access)).Bytes())
+		t := uuid.NewSHA1(uuid.Must(uuid.NewRandom()), []byte(access)).String()
+		refresh = base64.URLEncoding.EncodeToString([]byte(t))
 		refresh = strings.ToUpper(strings.TrimRight(refresh, "="))
 	}
 
-	return
+	return access, refresh, nil
 }
 
 func (a *JWTAccessGenerate) isEs() bool {

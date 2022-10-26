@@ -1,12 +1,13 @@
 package generates_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
-	"gopkg.in/oauth2.v3"
-	"gopkg.in/oauth2.v3/generates"
-	"gopkg.in/oauth2.v3/models"
+	"github.com/go-oauth2/oauth2/v4"
+	"github.com/go-oauth2/oauth2/v4/generates"
+	"github.com/go-oauth2/oauth2/v4/models"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -22,7 +23,7 @@ func TestAccess(t *testing.T) {
 			CreateAt: time.Now(),
 		}
 		gen := generates.NewAccessGenerate()
-		access, refresh, err := gen.Token(data, true)
+		access, refresh, err := gen.Token(context.Background(), data, true)
 		So(err, ShouldBeNil)
 		So(access, ShouldNotBeEmpty)
 		So(refresh, ShouldNotBeEmpty)

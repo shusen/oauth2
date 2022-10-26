@@ -1,12 +1,14 @@
 package manage_test
 
 import (
+	"context"
 	"testing"
+	"time"
 
-	"gopkg.in/oauth2.v3"
-	"gopkg.in/oauth2.v3/manage"
-	"gopkg.in/oauth2.v3/models"
-	"gopkg.in/oauth2.v3/store"
+	"github.com/go-oauth2/oauth2/v4"
+	"github.com/go-oauth2/oauth2/v4/manage"
+	"github.com/go-oauth2/oauth2/v4/models"
+	"github.com/go-oauth2/oauth2/v4/store"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -14,6 +16,7 @@ import (
 func TestManager(t *testing.T) {
 	Convey("Manager test", t, func() {
 		manager := manage.NewDefaultManager()
+		ctx := context.Background()
 
 		manager.MustTokenStorage(store.NewMemoryTokenStore())
 
@@ -33,7 +36,7 @@ func TestManager(t *testing.T) {
 		}
 
 		Convey("GetClient test", func() {
-			cli, err := manager.GetClient("1")
+			cli, err := manager.GetClient(ctx, "1")
 			So(err, ShouldBeNil)
 			So(cli.GetSecret(), ShouldEqual, "11")
 		})
@@ -41,11 +44,21 @@ func TestManager(t *testing.T) {
 		Convey("Token test", func() {
 			testManager(tgr, manager)
 		})
+
+		Convey("zero expiration access token test", func() {
+			testZeroAccessExpirationManager(tgr, manager)
+			testCannotRequestZeroExpirationAccessTokens(tgr, manager)
+		})
+
+		Convey("zero expiration refresh token test", func() {
+			testZeroRefreshExpirationManager(tgr, manager)
+		})
 	})
 }
 
 func testManager(tgr *oauth2.TokenGenerateRequest, manager oauth2.Manager) {
-	cti, err := manager.GenerateAuthToken(oauth2.Code, tgr)
+	ctx := context.Background()
+	cti, err := manager.GenerateAuthToken(ctx, oauth2.Code, tgr)
 	So(err, ShouldBeNil)
 
 	code := cti.GetCode()
@@ -57,53 +70,165 @@ func testManager(tgr *oauth2.TokenGenerateRequest, manager oauth2.Manager) {
 		RedirectURI:  tgr.RedirectURI,
 		Code:         code,
 	}
-	ati, err := manager.GenerateAccessToken(oauth2.AuthorizationCode, atParams)
+	ati, err := manager.GenerateAccessToken(ctx, oauth2.AuthorizationCode, atParams)
 	So(err, ShouldBeNil)
 
 	accessToken, refreshToken := ati.GetAccess(), ati.GetRefresh()
 	So(accessToken, ShouldNotBeEmpty)
 	So(refreshToken, ShouldNotBeEmpty)
 
-	ainfo, err := manager.LoadAccessToken(accessToken)
+	ainfo, err := manager.LoadAccessToken(ctx, accessToken)
 	So(err, ShouldBeNil)
 	So(ainfo.GetClientID(), ShouldEqual, atParams.ClientID)
 
-	arinfo, err := manager.LoadRefreshToken(accessToken)
+	arinfo, err := manager.LoadRefreshToken(ctx, accessToken)
 	So(err, ShouldNotBeNil)
 	So(arinfo, ShouldBeNil)
 
-	rainfo, err := manager.LoadAccessToken(refreshToken)
+	rainfo, err := manager.LoadAccessToken(ctx, refreshToken)
 	So(err, ShouldNotBeNil)
 	So(rainfo, ShouldBeNil)
 
-	rinfo, err := manager.LoadRefreshToken(refreshToken)
+	rinfo, err := manager.LoadRefreshToken(ctx, refreshToken)
 	So(err, ShouldBeNil)
 	So(rinfo.GetClientID(), ShouldEqual, atParams.ClientID)
 
-	atParams.Refresh = refreshToken
-	atParams.Scope = "owner"
-	rti, err := manager.RefreshAccessToken(atParams)
+	refreshParams := &oauth2.TokenGenerateRequest{
+		Refresh: refreshToken,
+		Scope:   "owner",
+	}
+	rti, err := manager.RefreshAccessToken(ctx, refreshParams)
 	So(err, ShouldBeNil)
 
 	refreshAT := rti.GetAccess()
 	So(refreshAT, ShouldNotBeEmpty)
 
-	_, err = manager.LoadAccessToken(accessToken)
+	_, err = manager.LoadAccessToken(ctx, accessToken)
 	So(err, ShouldNotBeNil)
 
-	refreshAInfo, err := manager.LoadAccessToken(refreshAT)
+	refreshAInfo, err := manager.LoadAccessToken(ctx, refreshAT)
 	So(err, ShouldBeNil)
 	So(refreshAInfo.GetScope(), ShouldEqual, "owner")
 
-	err = manager.RemoveAccessToken(refreshAT)
+	err = manager.RemoveAccessToken(ctx, refreshAT)
 	So(err, ShouldBeNil)
 
-	_, err = manager.LoadAccessToken(refreshAT)
+	_, err = manager.LoadAccessToken(ctx, refreshAT)
 	So(err, ShouldNotBeNil)
 
-	err = manager.RemoveRefreshToken(refreshToken)
+	err = manager.RemoveRefreshToken(ctx, refreshToken)
 	So(err, ShouldBeNil)
 
-	_, err = manager.LoadRefreshToken(refreshToken)
+	_, err = manager.LoadRefreshToken(ctx, refreshToken)
 	So(err, ShouldNotBeNil)
+}
+
+func testZeroAccessExpirationManager(tgr *oauth2.TokenGenerateRequest, manager oauth2.Manager) {
+	ctx := context.Background()
+	config := manage.Config{
+		AccessTokenExp:    0, // Set explicitly as we're testing 0 (no) expiration
+		IsGenerateRefresh: true,
+	}
+	m, ok := manager.(*manage.Manager)
+	So(ok, ShouldBeTrue)
+	m.SetAuthorizeCodeTokenCfg(&config)
+
+	cti, err := manager.GenerateAuthToken(ctx, oauth2.Code, tgr)
+	So(err, ShouldBeNil)
+
+	code := cti.GetCode()
+	So(code, ShouldNotBeEmpty)
+
+	atParams := &oauth2.TokenGenerateRequest{
+		ClientID:     tgr.ClientID,
+		ClientSecret: "11",
+		RedirectURI:  tgr.RedirectURI,
+		Code:         code,
+	}
+	ati, err := manager.GenerateAccessToken(ctx, oauth2.AuthorizationCode, atParams)
+	So(err, ShouldBeNil)
+
+	accessToken, refreshToken := ati.GetAccess(), ati.GetRefresh()
+	So(accessToken, ShouldNotBeEmpty)
+	So(refreshToken, ShouldNotBeEmpty)
+
+	tokenInfo, err := manager.LoadAccessToken(ctx, accessToken)
+	So(err, ShouldBeNil)
+	So(tokenInfo, ShouldNotBeNil)
+	So(tokenInfo.GetAccess(), ShouldEqual, accessToken)
+	So(tokenInfo.GetAccessExpiresIn(), ShouldEqual, 0)
+}
+
+func testCannotRequestZeroExpirationAccessTokens(tgr *oauth2.TokenGenerateRequest, manager oauth2.Manager) {
+	ctx := context.Background()
+	config := manage.Config{
+		AccessTokenExp: time.Hour * 5,
+	}
+	m, ok := manager.(*manage.Manager)
+	So(ok, ShouldBeTrue)
+	m.SetAuthorizeCodeTokenCfg(&config)
+
+	cti, err := manager.GenerateAuthToken(ctx, oauth2.Code, tgr)
+	So(err, ShouldBeNil)
+
+	code := cti.GetCode()
+	So(code, ShouldNotBeEmpty)
+
+	atParams := &oauth2.TokenGenerateRequest{
+		ClientID:       tgr.ClientID,
+		ClientSecret:   "11",
+		RedirectURI:    tgr.RedirectURI,
+		AccessTokenExp: 0, // requesting token without expiration
+		Code:           code,
+	}
+	ati, err := manager.GenerateAccessToken(ctx, oauth2.AuthorizationCode, atParams)
+	So(err, ShouldBeNil)
+
+	accessToken := ati.GetAccess()
+	So(accessToken, ShouldNotBeEmpty)
+	So(ati.GetAccessExpiresIn(), ShouldEqual, time.Hour*5)
+}
+
+func testZeroRefreshExpirationManager(tgr *oauth2.TokenGenerateRequest, manager oauth2.Manager) {
+	ctx := context.Background()
+	config := manage.Config{
+		RefreshTokenExp:   0, // Set explicitly as we're testing 0 (no) expiration
+		IsGenerateRefresh: true,
+	}
+	m, ok := manager.(*manage.Manager)
+	So(ok, ShouldBeTrue)
+	m.SetAuthorizeCodeTokenCfg(&config)
+
+	cti, err := manager.GenerateAuthToken(ctx, oauth2.Code, tgr)
+	So(err, ShouldBeNil)
+
+	code := cti.GetCode()
+	So(code, ShouldNotBeEmpty)
+
+	atParams := &oauth2.TokenGenerateRequest{
+		ClientID:       tgr.ClientID,
+		ClientSecret:   "11",
+		RedirectURI:    tgr.RedirectURI,
+		AccessTokenExp: time.Hour,
+		Code:           code,
+	}
+	ati, err := manager.GenerateAccessToken(ctx, oauth2.AuthorizationCode, atParams)
+	So(err, ShouldBeNil)
+
+	accessToken, refreshToken := ati.GetAccess(), ati.GetRefresh()
+	So(accessToken, ShouldNotBeEmpty)
+	So(refreshToken, ShouldNotBeEmpty)
+
+	tokenInfo, err := manager.LoadRefreshToken(ctx, refreshToken)
+	So(err, ShouldBeNil)
+	So(tokenInfo, ShouldNotBeNil)
+	So(tokenInfo.GetRefresh(), ShouldEqual, refreshToken)
+	So(tokenInfo.GetRefreshExpiresIn(), ShouldEqual, 0)
+
+	// LoadAccessToken also checks refresh expiry
+	tokenInfo, err = manager.LoadAccessToken(ctx, accessToken)
+	So(err, ShouldBeNil)
+	So(tokenInfo, ShouldNotBeNil)
+	So(tokenInfo.GetRefresh(), ShouldEqual, refreshToken)
+	So(tokenInfo.GetRefreshExpiresIn(), ShouldEqual, 0)
 }

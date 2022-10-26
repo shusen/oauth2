@@ -1,14 +1,15 @@
 package generates_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
-	"gopkg.in/oauth2.v3"
-	"gopkg.in/oauth2.v3/generates"
-	"gopkg.in/oauth2.v3/models"
+	"github.com/go-oauth2/oauth2/v4"
+	"github.com/go-oauth2/oauth2/v4/generates"
+	"github.com/go-oauth2/oauth2/v4/models"
+	"github.com/golang-jwt/jwt"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -27,8 +28,8 @@ func TestJWTAccess(t *testing.T) {
 			},
 		}
 
-		gen := generates.NewJWTAccessGenerate([]byte("00000000"), jwt.SigningMethodHS512)
-		access, refresh, err := gen.Token(data, true)
+		gen := generates.NewJWTAccessGenerate("", []byte("00000000"), jwt.SigningMethodHS512)
+		access, refresh, err := gen.Token(context.Background(), data, true)
 		So(err, ShouldBeNil)
 		So(access, ShouldNotBeEmpty)
 		So(refresh, ShouldNotBeEmpty)
